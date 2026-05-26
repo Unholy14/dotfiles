@@ -1,0 +1,73 @@
+{
+    "layer": "top",
+    "position": "top",
+    "height": 36,
+    "spacing": 4,
+
+    "modules-left": ["hyprland/workspaces", "hyprland/window"],
+    "modules-center": ["clock"],
+    "modules-right": ["mpris", "network", "bluetooth", "pulseaudio", "battery", "temperature", "custom/power", "tray"],
+
+    "hyprland/workspaces": {
+        "format": "{icon}",
+        "format-icons": {
+            "1": "I", "2": "II", "3": "III", "4": "IV", "5": "V"
+        }
+    },
+
+    "clock": {
+        "format": "{:%H:%M  %d/%m/%Y}"
+    },
+
+    "battery": {
+        "format": "{capacity}% {icon}",
+        "format-icons": ["", "", "", "", ""],
+        "format-charging": "{capacity}% "
+    },
+
+    "temperature": {
+        "format": "{temperatureC}°C"
+    },
+
+    "pulseaudio": {
+        "format": "{volume}% {icon}",
+        "format-muted": "muted ",
+        "format-icons": { "default": ["", "", ""] },
+        "on-click": "pavucontrol"
+    },
+
+    "network": {
+        "interface": "wlan0",
+        "format-wifi": "  {essid}",
+        "format-ethernet": "",
+        "format-disconnected": "",
+        "tooltip-text": "{ifname}: {ipaddr}",
+        "on-click": "nm-connection-editor"
+    },
+
+    "bluetooth": {
+        "format": " {status}",
+        "format-connected": " {device_alias}",
+        "format-connected-battery": " {device_alias} {device_battery_percentage}%",
+        "tooltip-text": "{controller_alias}\t{controller_address}",
+        "on-click": "blueman-manager"
+    },
+
+    "custom/power": {
+        "format": "⏻",
+        "on-click": "wlogout",
+        "tooltip": false
+    },
+
+    "tray": {
+        "spacing": 8,
+        "icon-size": 16
+    },
+
+    "mpris": {
+        "format": "  {title} - {artist}",
+        "format-paused": "  {title} - {artist}",
+        "max-length": 40,
+        "on-click": "playerctl play-pause"
+    }
+}

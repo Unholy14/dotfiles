@@ -1,0 +1,1224 @@
+
+    // --- VARIABLES DE ESTADO ---
+    property int activeWs: 1
+    property bool wifiOn: false
+    property bool btOn: false
+
+    // --- VARIABLES DE MÚSICA Y ARRASTRE ---
+    property string musicTitle: "Sin reproducción"
+    property string musicArtist: ""
+    property string musicCover: ""
+    property string musicPosStr: "0:00"
+    property string musicLenStr: "0:00"
+    property real musicProgress: 0.0
+    property real musicLenSec: 0.0
+    property bool draggingMusic: false
+    property real dragMusicProgress: 0.0
+
+    // --- COMANDOS AL HACER CLIC ---
+    Process { id: cmdSuspend; command: ["systemctl", "suspend"] }
+    Process { id: cmdReboot; command: ["systemctl", "reboot"] }
+    Process { id: cmdPoweroff; command: ["systemctl", "poweroff"] }
+    Process { id: cmdPrev; command: ["playerctl", "previous"] }
+    Process { id: cmdPlay; command: ["playerctl", "play-pause"] }
+    Process { id: cmdNext; command: ["playerctl", "next"] }
+    Process { id: cmdOpenWifi; command: ["nm-connection-editor"] }
+    Process { id: cmdOpenBt; command: ["blueman-manager"] }
+    Process { id: cmdLyrics; command: ["kitty", "--hold", "-e", "sptlrx"] }
+    Process { id: cmdEq; command: ["easyeffects"] }
+    Process { id: cmdMixer; command: ["pavucontrol"] }
+    
+    Process { 
+        id: cmdSeek
+        property string targetSec: "0"
+        command: ["playerctl", "position", targetSec] 
+    }
+    Process { 
+        id: cmdSetVol
+        property string targetVol: "50"
+        command: ["bash", "-c", "wpctl set-volume @DEFAULT_AUDIO_SINK@ " + targetVol + "% 2>/dev/null || amixer sset Master " + targetVol + "%"] 
+    }
+    Process { 
+        id: cmdSetBri
+        property string targetBri: "50"
+        command: ["bash", "-c", "brightnessctl set " + targetBri + "%"] 
+    }
+    Process { 
+        id: cmdSetWall
+        property string targetWall: ""
+        command: ["waypaper", "--wallpaper", targetWall] 
+    }
+
+    // --- CARGADOR DE FONDOS ---
+    ListModel { id: wallModel }
+    Process {
+        id: getWalls
+        command: ["bash", "-c", "ls -1 $HOME/Pictures/wallpapers/*.{jpg,jpeg,png,webp} 2>/dev/null"]
+        stdout: SplitParser {
+            onRead: function(data) {
+                var path = String(data).trim()
+                if (path !== "") {
+                    wallModel.append({"filePath": path, "fileUrl": "file://" + path})
+                }
+            }
+        }
+    }
+
+    // --- LECTORES DE DATOS ---
+    Process {
+        id: pWorkspace
+        command: ["bash", "-c", "hyprctl activeworkspace -j 2>/dev/null | grep -o '\"id\": [0-9]*' | grep -o '[0-9]*' || echo 1"]
+        stdout: SplitParser { 
+            onRead: function(data) { 
+                var val = parseInt(String(data).trim())
+                if (!isNaN(val)) root.activeWs = val 
+            } 
+        }
+    }
+    Process {
+        id: pNet
+        command: ["bash", "-c", "cat /sys/class/net/wl*/operstate 2>/dev/null | grep -q 'up' && echo 1 || echo 0"]
+        stdout: SplitParser { onRead: function(data) { root.wifiOn = (String(data).trim() === "1") } }
+    }
+    Process {
+        id: pBt
+        command: ["bash", "-c", "bluetoothctl show 2>/dev/null | grep -q 'Powered: yes' && echo 1 || echo 0"]
+        stdout: SplitParser { onRead: function(data) { root.btOn = (String(data).trim() === "1") } }
+    }
+    Process {
+        id: pCpu
+        command: ["bash", "-c", "grep 'cpu ' /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {print int(usage)}'"]
+        stdout: SplitParser { 
+            onRead: function(data) { 
+                var val = String(data).replace(/[^0-9]/g, "")
+                if (val !== "") root.valCPU = val 
+            } 
+        }
+    }
+    Process {
+        id: pRam
+        command: ["bash", "-c", "free | awk '/Mem:/ {print int($3/$2*100)}'"]
+        stdout: SplitParser { 
+            onRead: function(data) { 
+                var val = String(data).replace(/[^0-9]/g, "")
+                if (val !== "") root.valRAM = val 
+            } 
+        }
+    }
+    Process {
+        id: pBat
+        command: ["bash", "-c", "cat /sys/class/power_supply/BAT*/capacity 2>/dev/null || echo 100"]
+        stdout: SplitParser { 
+            onRead: function(data) { 
+                var val = String(data).replace(/[^0-9]/g, "")
+                if (val !== "") root.valBAT = val 
+            } 
+        }
+    }
+    Process {
+        id: pVol
+        command: ["bash", "-c", "wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null | awk '{print int($2*100)}' || amixer sget Master 2>/dev/null | awk -F\"[][]\" '/Left:/ {print $2}' | tr -d '%' || echo 50"]
+        stdout: SplitParser { 
+            onRead: function(data) { 
+                var val = parseFloat(String(data).trim())
+                if (!isNaN(val)) root.volProgress = val / 100.0 
+            } 
+        }
+    }
+    Process {
+        id: pBri
+        command: ["bash", "-c", "brightnessctl -m 2>/dev/null | awk -F, '{print substr($4, 1, length($4)-1)}' || echo 50"]
+        stdout: SplitParser { 
+            onRead: function(data) { 
+                var val = parseFloat(String(data).trim())
+                if (!isNaN(val)) root.briProgress = val / 100.0 
+            } 
+        }
+    }
+    Process {
+        id: pMusicTitle
+        command: ["bash", "-c", "playerctl metadata --format '{{title}}' 2>/dev/null || echo 'Sin reproducción'"]
+        stdout: SplitParser { onRead: function(data) { root.musicTitle = String(data).trim() } }
+    }
+    Process {
+        id: pMusicArtist
+        command: ["bash", "-c", "playerctl metadata --format '{{artist}}' 2>/dev/null || echo ''"]
+        stdout: SplitParser { onRead: function(data) { root.musicArtist = String(data).trim() } }
+    }
+    Process {
+        id: pMusicCover
+        command: ["bash", "-c", "~/.config/eww/get_cover.sh"]
+        stdout: SplitParser { 
+            onRead: function(data) { 
+                var path = String(data).trim()
+                if (path !== "" && path !== "null") {
+                    root.musicCover = "file://" + path + "?t=" + new Date().getTime()
+                } else {
+                    root.musicCover = ""
+                }
+            } 
+        }
+    }
+    Process {
+        id: pMusicProgress
+        command: ["bash", "-c", "echo \"$(playerctl position 2>/dev/null || echo 0) $(playerctl metadata mpris:length 2>/dev/null || echo 0)\""]
+        stdout: SplitParser {
+            onRead: function(data) {
+                var parts = String(data).trim().replace(/\s+/g, " ").split(" ")
+                if (parts.length >= 2) {
+                    var posSec = parseFloat(parts[0])
+                    var lenSec = parseFloat(parts[1]) / 1000000 
+                    root.musicLenSec = lenSec
+                    if (isNaN(posSec) || isNaN(lenSec) || lenSec <= 0) {
+                        root.musicPosStr = "0:00"
+                        root.musicLenStr = "0:00"
+                        root.musicProgress = 0
+                        return
+                    }
+                    var prog = posSec / lenSec
+                    if (!root.draggingMusic) {
+                        root.musicProgress = prog > 1 ? 1 : (prog < 0 ? 0 : prog)
+                    }
+                    root.musicPosStr = Math.floor(posSec / 60) + ":" + Math.floor(posSec % 60).toString().padStart(2, '0')
+                    root.musicLenStr = Math.floor(lenSec / 60) + ":" + Math.floor(lenSec % 60).toString().padStart(2, '0')
+                }
+            }
+        }
+    }
+
+    // --- TEMPORIZADORES ---
+    Timer { 
+        interval: 500
+        running: true
+        repeat: true
+        onTriggered: { 
+            pWorkspace.running = false
+            pWorkspace.running = true 
+        } 
+    }
+    
+    Timer {
+        interval: 1000
+        running: true
+        repeat: true
+        onTriggered: {
+            var date = new Date()
+            root.currentTime = date.toLocaleTimeString(Qt.locale(), "hh:mm:ss")
+            root.currentDate = date.getDate().toString().padStart(2, '0') + " . " + (date.getMonth() + 1).toString().padStart(2, '0') + " . " + date.getFullYear()
+            pMusicProgress.running = false
+            pMusicProgress.running = true
+        }
+    }
+    
+    Timer {
+        interval: 2000
+        running: true
+        repeat: true
+        onTriggered: {
+            pCpu.running = false
+            pCpu.running = true
+            pRam.running = false
+            pRam.running = true
+            pBat.running = false
+            pBat.running = true
+            pVol.running = false
+            pVol.running = true
+            pBri.running = false
+            pBri.running = true
+            pNet.running = false
+            pNet.running = true
+            pBt.running = false
+            pBt.running = true
+            pMusicTitle.running = false
+            pMusicTitle.running = true
+            pMusicArtist.running = false
+            pMusicArtist.running = true
+            pMusicCover.running = false
+            pMusicCover.running = true
+        }
+    }
+
+    Component.onCompleted: {
+        pWorkspace.running = true
+        pNet.running = true
+        pBt.running = true
+        pCpu.running = true
+        pRam.running = true
+        pBat.running = true
+        pVol.running = true
+        pBri.running = true
+        pMusicTitle.running = true
+        pMusicArtist.running = true
+        pMusicCover.running = true
+        pMusicProgress.running = true
+        getWalls.running = true
+    }
+
+    // --- 1. BARRA SUPERIOR MODULAR ---
+    PanelWindow {
+        id: topBar
+        anchors.top: true
+        anchors.left: true
+        anchors.right: true
+        height: 45
+        color: "transparent"
+        
+        WlrLayershell.namespace: "topbar"
+        WlrLayershell.layer: WlrLayershell.Layer.Top
+        exclusionMode: PanelWindow.ExclusionMode.Exclusive
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.topMargin: 8
+            anchors.leftMargin: 15
+            anchors.rightMargin: 15
+            spacing: 12
+
+            // ISLA 1: Workspaces
+            Rectangle {
+                Layout.preferredHeight: 32
+                Layout.preferredWidth: 100
+                radius: 6
+                color: "#0a0a0a"
+                border.color: hoverWs.containsMouse ? "#660000" : "#330000"
+                
+                Behavior on border.color { ColorAnimation { duration: 300 } }
+                MouseArea { 
+                    id: hoverWs
+                    anchors.fill: parent
+                    hoverEnabled: true 
+                }
+
+                Row {
+                    anchors.centerIn: parent
+                    spacing: 8
+                    Repeater {
+                        model: 5
+                        Rectangle {
+                            width: (index + 1) === root.activeWs ? 24 : 10
+                            height: 10
+                            radius: 5
+                            color: (index + 1) === root.activeWs ? "#ff3333" : "#220000"
+                            opacity: (index + 1) === root.activeWs ? 1.0 : 0.6
+                            Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+                            Behavior on color { ColorAnimation { duration: 300 } }
+                        }
+                    }
+                }
+            }
+
+            // ISLA 1.5: Atajos
+            Rectangle {
+                Layout.preferredHeight: 32
+                Layout.preferredWidth: 100
+                radius: 6
+                color: "#0a0a0a"
+                border.color: "#330000"
+
+                Row {
+                    anchors.centerIn: parent
+                    spacing: 15
+                    Text {
+                        text: "󰔊"
+                        color: hoverLyr.containsMouse ? "#ff3333" : "#8b0000"
+                        font.pixelSize: 16
+                        MouseArea { 
+                            id: hoverLyr
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: { 
+                                cmdLyrics.running = false
+                                cmdLyrics.running = true 
+                            } 
+                        }
+                    }
+                    Text {
+                        text: "󰓃"
+                        color: hoverEq.containsMouse ? "#ff3333" : "#8b0000"
+                        font.pixelSize: 16
+                        MouseArea { 
+                            id: hoverEq
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: { 
+                                cmdEq.running = false
+                                cmdEq.running = true 
+                            } 
+                        }
+                    }
+                    Text {
+                        text: "󰋋"
+                        color: hoverMix.containsMouse ? "#ff3333" : "#8b0000"
+                        font.pixelSize: 16
+                        MouseArea { 
+                            id: hoverMix
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: { 
+                                cmdMixer.running = false
+                                cmdMixer.running = true 
+                            } 
+                        }
+                    }
+                }
+            }
+
+            // ISLA 2: Música Interactiva
+            Rectangle {
+                Layout.preferredHeight: 32
+                Layout.preferredWidth: (root.musicTitle !== "" && root.musicTitle !== "Sin reproducción") ? 250 : 0
+                visible: Layout.preferredWidth > 0
+                radius: 6
+                color: "#0a0a0a"
+                border.color: hoverMusic.containsMouse ? "#660000" : "#330000"
+                clip: true
+                
+                Behavior on Layout.preferredWidth { NumberAnimation { duration: 400; easing.type: Easing.OutBack } }
+                MouseArea { 
+                    id: hoverMusic
+                    anchors.fill: parent
+                    hoverEnabled: true 
+                }
+
+                Image { 
+                    anchors.fill: parent
+                    source: root.musicCover
+                    fillMode: Image.PreserveAspectCrop
+                    opacity: 0.15 
+                }
+                
+                Row {
+                    anchors.centerIn: parent
+                    anchors.verticalCenterOffset: -2
+                    spacing: 8
+                    Text { 
+                        text: "󰎈"
+                        color: "#ff3333"
+                        font.pixelSize: 14
+                        MouseArea { 
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: { 
+                                cmdPlay.running = false
+                                cmdPlay.running = true 
+                            } 
+                        } 
+                    }
+                    Text { 
+                        text: root.musicTitle
+                        color: "#8b0000"
+                        font.pixelSize: 11
+                        font.bold: true
+                        width: 180
+                        elide: Text.ElideRight 
+                    }
+                }
+
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    width: parent.width
+                    height: 5
+                    color: "#220000"
+                    Rectangle { 
+                        width: parent.width * (root.draggingMusic ? root.dragMusicProgress : root.musicProgress)
+                        height: parent.height
+                        color: "#ff3333"
+                        radius: 2 
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onPressed: function(mouse) { 
+                            root.draggingMusic = true
+                            root.dragMusicProgress = Math.max(0, Math.min(1, mouse.x / width)) 
+                        }
+                        onPositionChanged: function(mouse) { 
+                            if (pressed) {
+                                root.dragMusicProgress = Math.max(0, Math.min(1, mouse.x / width)) 
+                            }
+                        }
+                        onReleased: function(mouse) {
+                            root.draggingMusic = false
+                            if (root.musicLenSec > 0) {
+                                var p = Math.max(0, Math.min(1, mouse.x / width))
+                                cmdSeek.targetSec = Math.floor(p * root.musicLenSec).toString()
+                                cmdSeek.running = false
+                                cmdSeek.running = true
+                                root.musicProgress = p
+                            }
+                        }
+                    }
+                }
+            }
+
+            Item { Layout.fillWidth: true } 
+
+            // ISLA 3: Reloj Central
+            Rectangle {
+                Layout.preferredHeight: 32
+                Layout.preferredWidth: 220
+                radius: 6
+                color: "#0a0a0a"
+                border.color: "#330000"
+                Text { 
+                    anchors.centerIn: parent
+                    text: root.currentDate + "  ◈  " + root.currentTime
+                    color: "#ff3333"
+                    font.pixelSize: 11
+                    font.bold: true
+                    font.letterSpacing: 2 
+                }
+            }
+
+            Item { Layout.fillWidth: true } 
+
+            // ISLA 4: Estado
+            Row {
+                spacing: 12
+                Rectangle {
+                    height: 32
+                    width: 110
+                    radius: 6
+                    color: "#0a0a0a"
+                    border.color: hoverState.containsMouse ? "#660000" : "#330000"
+                    Behavior on border.color { ColorAnimation { duration: 300 } }
+                    MouseArea { 
+                        id: hoverState
+                        anchors.fill: parent
+                        hoverEnabled: true 
+                    }
+
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 15
+                        Text { 
+                            text: "󰂯"
+                            color: root.btOn ? "#ff3333" : "#440000"
+                            font.pixelSize: 15 
+                            MouseArea { 
+                                anchors.fill: parent
+                                anchors.margins: -5
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: { 
+                                    cmdOpenBt.running = false
+                                    cmdOpenBt.running = true 
+                                } 
+                            }
+                        }
+                        Text { 
+                            text: "󰖩"
+                            color: root.wifiOn ? "#ff3333" : "#440000"
+                            font.pixelSize: 15 
+                            MouseArea { 
+                                anchors.fill: parent
+                                anchors.margins: -5
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: { 
+                                    cmdOpenWifi.running = false
+                                    cmdOpenWifi.running = true 
+                                } 
+                            }
+                        }
+                        Text { 
+                            text: "󰕾"
+                            color: "#ff3333"
+                            font.pixelSize: 15 
+                            MouseArea { 
+                                anchors.fill: parent
+                                anchors.margins: -5
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: { 
+                                    root.panelVisible = !root.panelVisible
+                                    if (root.panelVisible) {
+                                        hideTimer.stop() 
+                                    }
+                                } 
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    height: 32
+                    width: 70
+                    radius: 6
+                    color: "#0a0a0a"
+                    border.color: "#330000"
+                    Row { 
+                        anchors.centerIn: parent
+                        spacing: 6
+                        Text { 
+                            text: "󰁹"
+                            color: "#ff3333"
+                            font.pixelSize: 14 
+                        }
+                        Text { 
+                            text: root.valBAT + "%"
+                            color: "#8b0000"
+                            font.pixelSize: 11
+                            font.bold: true 
+                        } 
+                    }
+                }
+            }
+        }
+    }
+
+    // --- 2. ZONA ACTIVA INVISIBLE (Gatillo) ---
+    PanelWindow {
+        id: hotEdge
+        anchors.right: true
+        anchors.top: true
+        anchors.bottom: true
+        color: "transparent"
+        width: 1
+
+        WlrLayershell.namespace: "hotedge"
+        WlrLayershell.layer: WlrLayershell.Layer.Overlay
+
+        Item {
+            anchors.fill: parent
+            MouseArea { 
+                anchors.fill: parent
+                hoverEnabled: true
+                enabled: !root.panelVisible
+                onEntered: { 
+                    root.panelVisible = true
+                    hideTimer.stop() 
+                } 
+            }
+        }
+    }
+
+    // --- 3. PANEL DE FONDOS DE PANTALLA ---
+    PanelWindow {
+        id: wallpaperPanel
+        anchors.left: true
+        anchors.top: true
+        anchors.bottom: true
+        color: "transparent"
+        visible: root.wallVisible 
+        width: 350
+        
+        WlrLayershell.namespace: "wallpanel"
+        WlrLayershell.layer: WlrLayershell.Layer.Overlay
+
+        Rectangle {
+            anchors.fill: parent
+            color: "#0a0a0a"
+            
+            MouseArea { 
+                anchors.fill: parent
+                hoverEnabled: true
+                onEntered: hideTimer.stop()
+                onExited: hideTimer.restart()
+            }
+            
+            Rectangle { 
+                anchors.right: parent.right
+                width: 2
+                height: parent.height
+                color: "#8b0000" 
+            }
+
+            Item {
+                id: wallHeader
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: 25
+                height: 50
+                
+                Text { 
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "GALERÍA"
+                    color: "#8b0000"
+                    font.bold: true
+                    font.pixelSize: 18
+                    font.letterSpacing: 2 
+                }
+                Text { 
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "✖"
+                    color: "#ff3333"
+                    font.pixelSize: 18
+                    MouseArea { 
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.wallVisible = false 
+                    } 
+                }
+            }
+
+            GridView {
+                anchors.top: wallHeader.bottom
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: 20
+                clip: true
+                model: typeof wallModel !== "undefined" ? wallModel : null
+                cellWidth: 155
+                cellHeight: 110 
+                
+                delegate: Rectangle {
+                    width: 145
+                    height: 100
+                    color: "transparent"
+                    radius: 5
+                    border.color: "#330000"
+                    
+                    Image { 
+                        anchors.fill: parent
+                        anchors.margins: 2
+                        source: typeof fileUrl !== "undefined" ? fileUrl : ""
+                        fillMode: Image.PreserveAspectCrop
+                        clip: true 
+                    }
+                    MouseArea { 
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: { 
+                            if (typeof cmdSetWall !== "undefined") { 
+                                cmdSetWall.targetWall = filePath
+                                cmdSetWall.running = false
+                                cmdSetWall.running = true 
+                            } 
+                        } 
+                    }
+                }
+            }
+        }
+    }
+
+    // --- 4. PANEL DE CONTROL PRINCIPAL ---
+    PanelWindow {
+        id: controlPanel
+        anchors.right: true
+        anchors.top: true
+        anchors.bottom: true
+        color: "transparent"
+        visible: root.panelVisible
+        width: 350
+        
+        WlrLayershell.namespace: "controlpanel"
+        WlrLayershell.layer: WlrLayershell.Layer.Overlay
+
+        Rectangle {
+            anchors.fill: parent
+            color: "#0a0a0a"
+            
+            Rectangle { 
+                anchors.left: parent.left
+                width: 2
+                height: parent.height
+                color: "#8b0000" 
+            }
+            
+            Timer { 
+                id: hideTimer
+                interval: 800
+                repeat: false
+                onTriggered: { 
+                    root.panelVisible = false
+                    root.wallVisible = false 
+                } 
+            }
+            
+            MouseArea { 
+                id: panelMouseArea
+                anchors.fill: parent
+                hoverEnabled: true
+                onEntered: hideTimer.stop()
+                onExited: hideTimer.restart()
+            }
+
+            Item {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: 25
+                height: 50
+                
+                Row {
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 15
+                    Text { 
+                        text: "CONTROL"
+                        color: "#8b0000"
+                        font.bold: true
+                        font.pixelSize: 18
+                        font.letterSpacing: 2 
+                    }
+                    Text { 
+                        text: "[ FONDOS ]"
+                        color: "#ff3333"
+                        font.pixelSize: 14
+                        font.bold: true
+                        font.letterSpacing: 1
+                        opacity: root.wallVisible ? 1.0 : 0.5
+                        MouseArea { 
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: { 
+                                root.wallVisible = !root.wallVisible
+                                if (root.wallVisible && typeof getWalls !== "undefined") { 
+                                    wallModel.clear()
+                                    getWalls.running = false
+                                    getWalls.running = true 
+                                } 
+                            } 
+                        }
+                    }
+                }
+            }
+
+            Column {
+                anchors.top: parent.top
+                anchors.topMargin: 70
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: 15
+                width: 310
+
+                Rectangle {
+                    width: parent.width
+                    height: 50
+                    color: "#111111"
+                    radius: 5
+                    border.color: "#330000"
+                    
+                    Row { 
+                        anchors.centerIn: parent
+                        spacing: 25
+                        Text { 
+                            text: "CPU: " + root.valCPU + "%"
+                            color: "#ff3333"
+                            font.pixelSize: 13 
+                        }
+                        Text { 
+                            text: "RAM: " + root.valRAM + "%"
+                            color: "#ff3333"
+                            font.pixelSize: 13 
+                        }
+                        Text { 
+                            text: "BAT: " + root.valBAT + "%"
+                            color: "#ff3333"
+                            font.pixelSize: 13 
+                        } 
+                    }
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: 90
+                    color: "#111111"
+                    radius: 5
+                    border.color: "#330000"
+                    
+                    Column {
+                        anchors.centerIn: parent
+                        spacing: 15
+                        width: parent.width - 40
+                        
+                        Row {
+                            spacing: 15
+                            width: parent.width
+                            
+                            Text { 
+                                text: "🔊"
+                                color: "#ff3333"
+                                font.pixelSize: 16 
+                            }
+                            
+                            Rectangle { 
+                                height: 12
+                                width: parent.width - 40
+                                color: "transparent"
+                                anchors.verticalCenter: parent.verticalCenter
+                                
+                                Rectangle { 
+                                    width: parent.width
+                                    height: 6
+                                    color: "#330000"
+                                    radius: 3
+                                    anchors.centerIn: parent
+                                    
+                                    Rectangle { 
+                                        width: parent.width * root.volProgress
+                                        height: parent.height
+                                        color: "#ff3333"
+                                        radius: 3 
+                                    } 
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onPositionChanged: function(mouse) { 
+                                        if (pressed) { 
+                                            var p = Math.max(0, Math.min(1, mouse.x / width))
+                                            root.volProgress = p
+                                            if (typeof cmdSetVol !== "undefined") { 
+                                                cmdSetVol.targetVol = Math.floor(p * 100).toString()
+                                                cmdSetVol.running = false
+                                                cmdSetVol.running = true 
+                                            } 
+                                        } 
+                                    }
+                                    onClicked: function(mouse) { 
+                                        var p = Math.max(0, Math.min(1, mouse.x / width))
+                                        root.volProgress = p
+                                        if (typeof cmdSetVol !== "undefined") { 
+                                            cmdSetVol.targetVol = Math.floor(p * 100).toString()
+                                            cmdSetVol.running = false
+                                            cmdSetVol.running = true 
+                                        } 
+                                    }
+                                }
+                            }
+                        }
+                        
+                        Row {
+                            spacing: 15
+                            width: parent.width
+                            
+                            Text { 
+                                text: "☀️"
+                                color: "#ff3333"
+                                font.pixelSize: 16 
+                            }
+                            
+                            Rectangle { 
+                                height: 12
+                                width: parent.width - 40
+                                color: "transparent"
+                                anchors.verticalCenter: parent.verticalCenter
+                                
+                                Rectangle { 
+                                    width: parent.width
+                                    height: 6
+                                    color: "#330000"
+                                    radius: 3
+                                    anchors.centerIn: parent
+                                    
+                                    Rectangle { 
+                                        width: parent.width * root.briProgress
+                                        height: parent.height
+                                        color: "#ff3333"
+                                        radius: 3 
+                                    } 
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onPositionChanged: function(mouse) { 
+                                        if (pressed) { 
+                                            var p = Math.max(0, Math.min(1, mouse.x / width))
+                                            root.briProgress = p
+                                            if (typeof cmdSetBri !== "undefined") { 
+                                                cmdSetBri.targetBri = Math.floor(p * 100).toString()
+                                                cmdSetBri.running = false
+                                                cmdSetBri.running = true 
+                                            } 
+                                        } 
+                                    }
+                                    onClicked: function(mouse) { 
+                                        var p = Math.max(0, Math.min(1, mouse.x / width))
+                                        root.briProgress = p
+                                        if (typeof cmdSetBri !== "undefined") { 
+                                            cmdSetBri.targetBri = Math.floor(p * 100).toString()
+                                            cmdSetBri.running = false
+                                            cmdSetBri.running = true 
+                                        } 
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: 320
+                    color: "#111111"
+                    radius: 5
+                    border.color: "#330000"
+                    
+                    Column {
+                        anchors.centerIn: parent
+                        spacing: 15
+                        
+                        Rectangle { 
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: 180
+                            height: 180
+                            color: "#050505"
+                            radius: 4
+                            clip: true
+                            
+                            Text { 
+                                anchors.centerIn: parent
+                                text: "♫"
+                                color: "#330000"
+                                font.pixelSize: 50
+                                visible: root.musicCover === "" 
+                            }
+                            Image { 
+                                anchors.fill: parent
+                                fillMode: Image.PreserveAspectCrop
+                                source: root.musicCover
+                                visible: root.musicCover !== "" 
+                            }
+                        }
+                        
+                        Column {
+                            spacing: 2
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            
+                            Text { 
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: root.musicTitle
+                                color: "#ff3333"
+                                font.pixelSize: 14
+                                font.bold: true
+                                width: 280
+                                elide: Text.ElideRight
+                                horizontalAlignment: Text.AlignHCenter 
+                            }
+                            Text { 
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: root.musicArtist
+                                color: "#8b0000"
+                                font.pixelSize: 12
+                                width: 280
+                                elide: Text.ElideRight
+                                horizontalAlignment: Text.AlignHCenter
+                                visible: root.musicArtist !== "" 
+                            }
+                        }
+                        
+                        Row {
+                            spacing: 10
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            
+                            Text { 
+                                text: root.musicPosStr
+                                color: "#8b0000"
+                                font.pixelSize: 11
+                                width: 30
+                                horizontalAlignment: Text.AlignRight 
+                            }
+                            
+                            Rectangle { 
+                                width: 180
+                                height: 12
+                                color: "transparent"
+                                anchors.verticalCenter: parent.verticalCenter
+                                
+                                Rectangle { 
+                                    width: 180
+                                    height: 4
+                                    color: "#330000"
+                                    radius: 2
+                                    anchors.centerIn: parent
+                                    
+                                    Rectangle { 
+                                        width: parent.width * (root.draggingMusic ? root.dragMusicProgress : root.musicProgress)
+                                        height: parent.height
+                                        color: "#ff3333"
+                                        radius: 2 
+                                    } 
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onPressed: function(mouse) { 
+                                        root.draggingMusic = true
+                                        root.dragMusicProgress = Math.max(0, Math.min(1, mouse.x / width)) 
+                                    }
+                                    onPositionChanged: function(mouse) { 
+                                        if (pressed) {
+                                            root.dragMusicProgress = Math.max(0, Math.min(1, mouse.x / width)) 
+                                        }
+                                    }
+                                    onReleased: function(mouse) { 
+                                        root.draggingMusic = false
+                                        if (root.musicLenSec > 0) { 
+                                            var p = Math.max(0, Math.min(1, mouse.x / width))
+                                            if (typeof cmdSeek !== "undefined") { 
+                                                cmdSeek.targetSec = Math.floor(p * root.musicLenSec).toString()
+                                                cmdSeek.running = false
+                                                cmdSeek.running = true 
+                                            }
+                                            root.musicProgress = p 
+                                        } 
+                                    }
+                                }
+                            }
+                            
+                            Text { 
+                                text: root.musicLenStr
+                                color: "#8b0000"
+                                font.pixelSize: 11
+                                width: 30
+                                horizontalAlignment: Text.AlignLeft 
+                            }
+                        }
+                        
+                        Row {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            spacing: 35
+                            
+                            Text { 
+                                text: "⏮"
+                                color: "#8b0000"
+                                font.pixelSize: 20
+                                MouseArea { 
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: { 
+                                        if (typeof cmdPrev !== "undefined") {
+                                            cmdPrev.running = true 
+                                        }
+                                    } 
+                                } 
+                            }
+                            Text { 
+                                text: "⏯"
+                                color: "#ff3333"
+                                font.pixelSize: 24
+                                MouseArea { 
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: { 
+                                        if (typeof cmdPlay !== "undefined") {
+                                            cmdPlay.running = true 
+                                        }
+                                    } 
+                                } 
+                            }
+                            Text { 
+                                text: "⏭"
+                                color: "#8b0000"
+                                font.pixelSize: 20
+                                MouseArea { 
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: { 
+                                        if (typeof cmdNext !== "undefined") {
+                                            cmdNext.running = true 
+                                        }
+                                    } 
+                                } 
+                            }
+                        }
+                    }
+                }
+
+                Column {
+                    anchors.bottom: powerButtons.top
+                    anchors.bottomMargin: 20
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: parent.width
+                    spacing: 12
+                    
+                    Text { 
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "꧁   ❖   ꧂"
+                        color: "#8b0000"
+                        font.pixelSize: 22 
+                    }
+                    Text { 
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: root.currentDate
+                        color: "#8b0000"
+                        font.pixelSize: 18
+                        font.letterSpacing: 4
+                        font.bold: true 
+                    }
+                    Text { 
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: "« Per Aspera Ad Astra »"
+                        color: "#555555"
+                        font.pixelSize: 14
+                        font.italic: true 
+                    }
+                    Image { 
+                        id: logoAres
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: 170
+                        height: 170
+                        fillMode: Image.PreserveAspectFit
+                        source: "file://" + Quickshell.configDir + "/logo.png"
+                        opacity: 0.8 
+                    }
+                }
+
+                Row {
+                    id: powerButtons
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 30
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 50
+                    
+                    Text { 
+                        text: "⏾"
+                        color: "#8b0000"
+                        font.pixelSize: 24
+                        MouseArea { 
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onEntered: hideTimer.stop()
+                            onExited: hideTimer.restart()
+                            onClicked: { 
+                                if (typeof cmdSuspend !== "undefined") {
+                                    cmdSuspend.running = true 
+                                }
+                            } 
+                        } 
+                    } 
+                    Text { 
+                        text: "⭮"
+                        color: "#8b0000"
+                        font.pixelSize: 24
+                        MouseArea { 
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onEntered: hideTimer.stop()
+                            onExited: hideTimer.restart()
+                            onClicked: { 
+                                if (typeof cmdReboot !== "undefined") {
+                                    cmdReboot.running = true 
+                                }
+                            } 
+                        } 
+                    } 
+                    Text { 
+                        text: "⏻"
+                        color: "#ff3333"
+                        font.pixelSize: 24
+                        font.bold: true
+                        MouseArea { 
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onEntered: hideTimer.stop()
+                            onExited: hideTimer.restart()
+                            onClicked: { 
+                                if (typeof cmdPoweroff !== "undefined") {
+                                    cmdPoweroff.running = true 
+                                }
+                            } 
+                        } 
+                    } 
+                }
+            }
+        }
+    }
+}

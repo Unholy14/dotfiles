@@ -1,0 +1,76 @@
+(defwindow music
+  :monitor 0
+  :geometry (geometry
+    :x "20px"
+    :y "50px"
+    :width "280px"
+    :anchor "top left")
+  :stacking "bottom"
+  :exclusive false
+  :focusable false
+  (music_widget))
+
+(defwindow system
+  :monitor 0
+  :geometry (geometry
+    :x "20px"
+    :y "20px"
+    :width "280px"
+    :anchor "bottom left")
+  :stacking "bottom"
+  :exclusive false
+  :focusable false
+  (system_widget))
+
+(defwindow cava_widget
+  :monitor 0
+  :geometry (geometry
+    :x "20px"
+    :y "50px"
+    :width "900px"
+    :height "60px"
+    :anchor "top right")
+  :stacking "bottom"
+  :exclusive false
+  :focusable false
+  (box :class "cava-box" :valign "center" :halign "fill"
+    (label :class "cava-text" :text {cava_out} :halign "center" :valign "center" :wrap false)))
+
+(defwidget music_widget []
+  (box :class "music-box" :orientation "v" :spacing 8 :space-evenly false
+    (box :class "album-art-box"
+      (image :path {music_cover} :image-width 240 :image-height 240))
+    (label :class "music-title" :text {music_title} :limit-width 30)
+    (label :class "music-artist" :text {music_artist} :limit-width 30)
+    (box :orientation "h" :spacing 16 :halign "center"
+      (button :class "media-btn" :onclick "playerctl previous" "⏮")
+      (button :class "media-btn" :onclick "playerctl play-pause" "⏯")
+      (button :class "media-btn" :onclick "playerctl next" "⏭"))))
+
+(defwidget system_widget []
+  (box :class "system-box" :orientation "v" :spacing 8 :space-evenly false
+    (label :class "section-title" :text "sistema" :halign "start")
+    (box :orientation "v" :spacing 4
+      (label :class "stat-label" :text "CPU ${cpu}%" :halign "start")
+      (progress :class "stat-bar" :value {cpu} :orientation "h"))
+    (box :orientation "v" :spacing 4
+      (label :class "stat-label" :text "RAM ${ram}%" :halign "start")
+      (progress :class "stat-bar" :value {ram} :orientation "h"))))
+
+(defpoll music_title :interval "2s"
+  "playerctl metadata --format '{{title}}' 2>/dev/null || echo 'sin música'")
+
+(defpoll music_artist :interval "2s"
+  "playerctl metadata --format '{{artist}}' 2>/dev/null || echo ''")
+
+(defpoll music_cover :interval "3s"
+  "/home/sevro/.config/eww/get_cover.sh")
+
+(defpoll cpu :interval "3s"
+  "grep 'cpu ' /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {print int(usage)}'")
+
+(defpoll ram :interval "3s"
+  "free | awk '/Mem:/ {print int($3/$2*100)}'")
+
+(defpoll cava_out :interval "0.1s"
+  "cat /tmp/cava_out 2>/dev/null || echo '▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁'")

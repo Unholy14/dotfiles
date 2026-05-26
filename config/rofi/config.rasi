@@ -1,0 +1,48 @@
+configuration {
+    modi: "drun";
+    show-icons: true;
+    font: "JetBrainsMono Nerd Font 12";
+}
+
+@theme "/dev/null"
+
+* {
+    background-color: #080808ee;
+    text-color: #cccccc;
+    border-color: #880000;
+}
+
+window {
+    width: 500px;
+    border: 2px solid;
+    border-radius: 8px;
+    padding: 12px;
+    background-color: #080808ee;
+}
+
+mainbox { padding: 8px; }
+
+inputbar {
+    padding: 8px;
+    border-radius: 4px;
+    background-color: #1a0000cc;
+    margin: 0 0 8px 0;
+}
+
+entry, prompt {
+    text-color: #ffffff;
+}
+
+element {
+    padding: 6px 8px;
+    border-radius: 4px;
+}
+
+element selected {
+    background-color: #333333;
+    text-color: #ff4444;
+}
+
+element-text {
+    text-color: inherit;
+}

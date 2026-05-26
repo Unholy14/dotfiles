@@ -1,0 +1,88 @@
+env = LIBVA_DRIVER_NAME,nvidia
+env = XDG_SESSION_TYPE,wayland
+env = GBM_BACKEND,nvidia-drm
+env = __GLX_VENDOR_LIBRARY_NAME,nvidia
+env = NVD_BACKEND,direct
+env = ELECTRON_OZONE_PLATFORM_HINT,auto
+env = GDK_BACKEND,wayland
+env = GTK_THEME,gothic-red
+
+monitor=,preferred,auto,1
+
+exec-once = swww-daemon && swww img ~/Pictures/wallpapers/stanczyk.jpg --transition-type fade
+exec-once = waybar
+exec-once = dunst
+exec-once = /usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1
+exec-once = pactl set-default-sink alsa_output.pci-0000_00_1f.3.analog-stereo
+exec-once = blueman-applet
+exec-once = nm-applet
+exec-once = systemctl --user start pipewire pipewire-pulse wireplumber
+exec-once = /home/sevro/.config/eww/start_cava.sh
+exec-once = eww daemon && eww open music && eww open system
+exec-once = bash -c 'sleep 5 && kitty --class cava-widget -o initial_window_width=1200 -o initial_window_height=200 -o background_opacity=0.0 -o hide_window_decorations=yes -o foreground=#cc0000 -e cava -p ~/.config/cava/config'
+
+input {
+    kb_layout = es
+    follow_mouse = 1
+    touchpad {
+        natural_scroll = yes
+    }
+}
+
+general {
+    gaps_in = 4
+    gaps_out = 10
+    border_size = 2
+    col.active_border = rgba(cc0000ff) rgba(880000ff) 45deg
+    col.inactive_border = rgba(1a1a1aff)
+    layout = dwindle
+}
+
+decoration {
+    rounding = 6
+    active_opacity = 0.92
+    inactive_opacity = 0.80
+    blur {
+        enabled = yes
+        size = 6
+        passes = 3
+    }
+}
+
+animations {
+    enabled = yes
+    bezier = gothic, 0.05, 0.9, 0.1, 1.05
+    animation = windows, 1, 6, gothic
+    animation = windowsOut, 1, 5, default, popin 80%
+    animation = fade, 1, 8, default
+    animation = workspaces, 1, 5, gothic, slidevert
+}
+
+dwindle {
+    pseudotile = yes
+    preserve_split = yes
+}
+
+$mod = SUPER
+
+bind = $mod, Return, exec, kitty
+bind = $mod, Q, killactive
+bind = $mod, Space, exec, rofi -show drun
+bind = $mod, F, fullscreen
+bind = $mod SHIFT, Q, exit
+bind = $mod, 1, workspace, 1
+bind = $mod, 2, workspace, 2
+bind = $mod, 3, workspace, 3
+bind = $mod, 4, workspace, 4
+bind = $mod, 5, workspace, 5
+bind = $mod SHIFT, 1, movetoworkspace, 1
+bind = $mod SHIFT, 2, movetoworkspace, 2
+bind = $mod SHIFT, 3, movetoworkspace, 3
+bind = $mod SHIFT, 4, movetoworkspace, 4
+bind = $mod SHIFT, 5, movetoworkspace, 5
+bindm = SUPER, mouse:272, movewindow
+bindm = SUPER, mouse:273, resizewindow
+bind = , Print, exec, grim ~/Pictures/captura-$(date +%s).png
+bind = $mod, L, exec, hyprlock
+bind = $mod, E, exec, thunar
+bind = $mod, Z, exec, kitty --class cava-widget -o initial_window_width=1200 -o initial_window_height=200 -o background_opacity=0.0 -o hide_window_decorations=yes -o foreground=#cc0000 -- cava -p ~/.config/cava/config

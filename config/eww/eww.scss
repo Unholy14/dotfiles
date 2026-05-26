@@ -1,0 +1,109 @@
+* {
+    font-family: "JetBrainsMono Nerd Font";
+    font-size: 12px;
+    color: #cc0000;
+}
+
+.music-box, .system-box, .cal-box {
+    background-color: rgba(10, 10, 10, 0.88);
+    border: 1px solid #880000;
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.album-art-box {
+    border: 2px solid #880000;
+    border-radius: 4px;
+}
+
+.music-title {
+    font-size: 13px;
+    font-weight: bold;
+    color: #cc0000;
+}
+
+.music-artist {
+    color: #880000;
+    font-style: italic;
+}
+
+.media-btn {
+    background-color: rgba(20, 0, 0, 0.8);
+    border: 1px solid #660000;
+    border-radius: 4px;
+    padding: 6px 16px;
+    color: #cc0000;
+    font-size: 16px;
+}
+
+.media-btn:hover {
+    background-color: rgba(80, 0, 0, 0.9);
+    color: #ff3333;
+}
+
+.cava-box {
+    background-color: rgba(10, 10, 10, 0.75);
+    border: 1px solid #880000;
+    border-radius: 8px;
+    padding: 4px 16px;
+    min-height: 50px;
+}
+
+.cava-text {
+    font-size: 32px;
+    color: #cc0000;
+    letter-spacing: 3px;
+    white-space: nowrap;
+    min-width: 860px;
+}
+
+}
+
+.media-btn:hover {
+    background-color: rgba(80, 0, 0, 0.9);
+    color: #ff3333;
+}
+
+.section-title {
+    font-size: 11px;
+    color: #660000;
+    text-transform: lowercase;
+    letter-spacing: 2px;
+}
+
+.stat-label {
+    min-width: 40px;
+    color: #880000;
+}
+
+.stat-bar {
+    color: #cc0000;
+}
+
+.cal {
+    color: #cc0000;
+}
+
+.stat-bar {
+    color: #cc0000;
+    min-height: 8px;
+    border-radius: 4px;
+    min-width: 240px;
+}
+
+progress {
+    border-radius: 4px;
+    min-height: 8px;
+}
+
+progress trough {
+    background-color: rgba(40, 0, 0, 0.5);
+    border-radius: 4px;
+    min-height: 8px;
+}
+
+progress progress {
+    background-color: #cc0000;
+    border-radius: 4px;
+    min-height: 8px;
+}
